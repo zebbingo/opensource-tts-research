@@ -3,7 +3,6 @@ import shutil
 import subprocess
 import time
 import uuid
-from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 from voices import DEFAULT_TEXT, OUTPUTS, VOICE_CATALOG
@@ -12,14 +11,13 @@ app = Flask(__name__)
 
 
 def run(cmd, input_text=None):
-    p = subprocess.run(
+    return subprocess.run(
         cmd,
         input=input_text.encode("utf-8") if input_text else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=True,
     )
-    return p
 
 
 def check_bins():
@@ -30,14 +28,48 @@ def check_bins():
     }
 
 
+def synth_to_file(engine: str, voice: str, text: str, out_path):
+    if engine == "piper":
+        spec = VOICE_CATALOG["piper"]["voices"][voice]
+        run(
+            [
+                "piper",
+                "--model",
+                str(spec["model"]),
+                "--config",
+                str(spec["config"]),
+                "--output_file",
+                str(out_path),
+            ],
+            input_text=text,
+        )
+
+    elif engine == "coqui":
+        spec = VOICE_CATALOG["coqui"]["voices"][voice]
+        cmd = [
+            "tts",
+            "--model_name",
+            spec["model_name"],
+            "--text",
+            text,
+            "--out_path",
+            str(out_path),
+        ]
+        if spec.get("speaker"):
+            cmd += ["--speaker_idx", spec["speaker"]]
+        run(cmd)
+
+    elif engine == "espeak":
+        spec = VOICE_CATALOG["espeak"]["voices"][voice]
+        run(["espeak-ng", "-v", spec["voice"], "-w", str(out_path), text])
+
+
 @app.get("/")
 def index():
     simple_catalog = {
         e: {
             "label": cfg["label"],
-            "voices": {
-                k: {"label": v["label"]} for k, v in cfg["voices"].items()
-            },
+            "voices": {k: {"label": v["label"]} for k, v in cfg["voices"].items()},
         }
         for e, cfg in VOICE_CATALOG.items()
     }
@@ -67,50 +99,64 @@ def synthesize():
     out_path = OUTPUTS / out_name
 
     try:
-        if engine == "piper":
-            spec = VOICE_CATALOG["piper"]["voices"][voice]
-            run([
-                "piper",
-                "--model",
-                str(spec["model"]),
-                "--config",
-                str(spec["config"]),
-                "--output_file",
-                str(out_path),
-            ], input_text=text)
-
-        elif engine == "coqui":
-            spec = VOICE_CATALOG["coqui"]["voices"][voice]
-            cmd = [
-                "tts",
-                "--model_name",
-                spec["model_name"],
-                "--text",
-                text,
-                "--out_path",
-                str(out_path),
-            ]
-            if spec.get("speaker"):
-                cmd += ["--speaker_idx", spec["speaker"]]
-            run(cmd)
-
-        elif engine == "espeak":
-            spec = VOICE_CATALOG["espeak"]["voices"][voice]
-            run([
-                "espeak-ng",
-                "-v",
-                spec["voice"],
-                "-w",
-                str(out_path),
-                text,
-            ])
-
+        synth_to_file(engine, voice, text, out_path)
         return jsonify({"ok": True, "audio_url": f"/audio/{out_name}"})
     except subprocess.CalledProcessError as e:
-        return jsonify({
-            "ok": False,
-            "error": e.stderr.decode("utf-8", errors="ignore")[-2000:],
-        }), 500
+        return jsonify(
+            {
+                "ok": False,
+                "error": e.stderr.decode("utf-8", errors="ignore")[-2000:],
+            }
+        ), 500
+
+
+@app.post("/compare_batch")
+def compare_batch():
+    data = request.json or {}
+    text = (data.get("text") or "").strip()
+    items = data.get("items") or []
+
+    if not text:
+        return jsonify({"ok": False, "error": "Text is empty"}), 400
+    if not isinstance(items, list) or len(items) == 0:
+        return jsonify({"ok": False, "error": "Please select at least one voice"}), 400
+
+    results = []
+    for item in items:
+        engine = item.get("engine")
+        voice = item.get("voice")
+        label = item.get("label") or f"{engine}:{voice}"
+
+        if engine not in VOICE_CATALOG or voice not in VOICE_CATALOG[engine]["voices"]:
+            results.append({"ok": False, "label": label, "error": "Unknown engine/voice"})
+            continue
+
+        out_name = f"{engine}_{voice}_{int(time.time())}_{uuid.uuid4().hex[:6]}.wav"
+        out_path = OUTPUTS / out_name
+
+        try:
+            synth_to_file(engine, voice, text, out_path)
+            results.append(
+                {
+                    "ok": True,
+                    "engine": engine,
+                    "voice": voice,
+                    "label": label,
+                    "audio_url": f"/audio/{out_name}",
+                }
+            )
+        except subprocess.CalledProcessError as e:
+            results.append(
+                {
+                    "ok": False,
+                    "engine": engine,
+                    "voice": voice,
+                    "label": label,
+                    "error": e.stderr.decode("utf-8", errors="ignore")[-1000:],
+                }
+            )
+
+    return jsonify({"ok": True, "results": results})
 
 
 @app.get("/audio/<name>")

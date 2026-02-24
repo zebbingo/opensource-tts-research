@@ -5,13 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Open-Source TTS Research</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1080px; margin: 24px auto; padding: 0 16px; }
     textarea { width: 100%; min-height: 140px; }
     select, button { padding: 8px; margin-right: 8px; }
     .row { margin: 12px 0; }
     .status { font-size: 14px; color: #555; }
     .ok { color: #0a7f2e; }
     .bad { color: #b42318; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .panel { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .voice-list { max-height: 280px; overflow: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px; }
+    .voice-item { display: block; margin: 6px 0; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 12px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 10px; }
+    .card h4 { margin: 0 0 8px; font-size: 15px; }
+    .score label { display:block; font-size: 12px; margin-top: 6px; color:#444; }
+    .score input[type=range] { width: 100%; }
+    .muted { color: #666; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -26,24 +36,42 @@
   </div>
 
   <div class="row">
-    <label>Engine</label>
-    <select id="engine"></select>
-    <label>Voice</label>
-    <select id="voice"></select>
-  </div>
-
-  <div class="row">
     <textarea id="text">{{ default_text }}</textarea>
   </div>
 
-  <div class="row">
-    <button id="go">Synthesize</button>
-    <span id="msg"></span>
+  <div class="split">
+    <div class="panel">
+      <h3>Single Voice Test</h3>
+      <div class="row">
+        <label>Engine</label>
+        <select id="engine"></select>
+        <label>Voice</label>
+        <select id="voice"></select>
+      </div>
+      <div class="row">
+        <button id="go">Synthesize</button>
+        <span id="msg" class="muted"></span>
+      </div>
+      <audio id="player" controls style="width:100%;"></audio>
+    </div>
+
+    <div class="panel">
+      <h3>Compare Panel (Batch)</h3>
+      <p class="muted">Select multiple voices, generate all at once, then score each one.</p>
+      <div class="row">
+        <button id="selectAll">Select all</button>
+        <button id="clearAll">Clear</button>
+      </div>
+      <div id="voiceList" class="voice-list"></div>
+      <div class="row">
+        <button id="batchGo">Generate selected voices</button>
+        <span id="batchMsg" class="muted"></span>
+      </div>
+    </div>
   </div>
 
-  <div class="row">
-    <audio id="player" controls style="width:100%;"></audio>
-  </div>
+  <h3>Comparison Results</h3>
+  <div id="resultGrid" class="grid"></div>
 
 <script>
 const catalog = {{ catalog | tojson }};
@@ -51,6 +79,9 @@ const engineSel = document.getElementById('engine');
 const voiceSel = document.getElementById('voice');
 const msg = document.getElementById('msg');
 const player = document.getElementById('player');
+const voiceList = document.getElementById('voiceList');
+const batchMsg = document.getElementById('batchMsg');
+const resultGrid = document.getElementById('resultGrid');
 
 function populateEngines() {
   Object.entries(catalog).forEach(([k, v]) => {
@@ -71,7 +102,74 @@ function populateVoices() {
   });
 }
 
+function buildVoiceChecklist() {
+  const fr = document.createDocumentFragment();
+  Object.entries(catalog).forEach(([engine, eCfg]) => {
+    const title = document.createElement('div');
+    title.style.marginTop = '8px';
+    title.style.fontWeight = '600';
+    title.textContent = eCfg.label;
+    fr.appendChild(title);
+
+    Object.entries(eCfg.voices).forEach(([voice, vCfg]) => {
+      const id = `c_${engine}_${voice}`.replace(/[^a-zA-Z0-9_]/g, '_');
+      const label = document.createElement('label');
+      label.className = 'voice-item';
+      label.innerHTML = `<input type="checkbox" data-engine="${engine}" data-voice="${voice}" data-label="${vCfg.label}"> ${vCfg.label}`;
+      fr.appendChild(label);
+    });
+  });
+  voiceList.innerHTML = '';
+  voiceList.appendChild(fr);
+}
+
+function selectedBatchItems() {
+  return [...voiceList.querySelectorAll('input[type=checkbox]:checked')].map(el => ({
+    engine: el.dataset.engine,
+    voice: el.dataset.voice,
+    label: el.dataset.label
+  }));
+}
+
+function makeSlider(name, idSuffix) {
+  return `
+    <label>${name}: <span id="${idSuffix}_v">3</span>/5</label>
+    <input type="range" min="1" max="5" value="3" id="${idSuffix}">
+  `;
+}
+
+function addResultCard(item) {
+  const key = `${item.engine}_${item.voice}_${Math.random().toString(16).slice(2,7)}`;
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  if (!item.ok) {
+    card.innerHTML = `<h4>${item.label}</h4><div class='bad'>Failed</div><pre style='white-space:pre-wrap'>${item.error || ''}</pre>`;
+    resultGrid.appendChild(card);
+    return;
+  }
+
+  card.innerHTML = `
+    <h4>${item.label}</h4>
+    <audio controls style="width:100%" src="${item.audio_url}"></audio>
+    <div class="score">
+      ${makeSlider('Naturalness', key + '_n')}
+      ${makeSlider('Clarity', key + '_c')}
+      ${makeSlider('Kid-friendliness', key + '_k')}
+    </div>
+  `;
+
+  ['n','c','k'].forEach(s => {
+    const slider = card.querySelector(`#${key}_${s}`);
+    const val = card.querySelector(`#${key}_${s}_v`);
+    slider.addEventListener('input', () => { val.textContent = slider.value; });
+  });
+
+  resultGrid.appendChild(card);
+}
+
 engineSel.addEventListener('change', populateVoices);
+
 document.getElementById('go').addEventListener('click', async () => {
   msg.textContent = 'Synthesizing...';
   const r = await fetch('/synthesize', {
@@ -93,8 +191,44 @@ document.getElementById('go').addEventListener('click', async () => {
   msg.textContent = 'Done.';
 });
 
+document.getElementById('selectAll').addEventListener('click', () => {
+  voiceList.querySelectorAll('input[type=checkbox]').forEach(el => el.checked = true);
+});
+
+document.getElementById('clearAll').addEventListener('click', () => {
+  voiceList.querySelectorAll('input[type=checkbox]').forEach(el => el.checked = false);
+});
+
+document.getElementById('batchGo').addEventListener('click', async () => {
+  const items = selectedBatchItems();
+  if (items.length === 0) {
+    batchMsg.textContent = 'Please select at least one voice.';
+    return;
+  }
+
+  batchMsg.textContent = `Generating ${items.length} voices...`;
+  resultGrid.innerHTML = '';
+
+  const r = await fetch('/compare_batch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ text: document.getElementById('text').value, items })
+  });
+  const data = await r.json();
+
+  if (!data.ok) {
+    batchMsg.textContent = 'Error: ' + (data.error || 'Unknown');
+    return;
+  }
+
+  data.results.forEach(addResultCard);
+  const okCount = data.results.filter(x => x.ok).length;
+  batchMsg.textContent = `Done. ${okCount}/${data.results.length} generated.`;
+});
+
 populateEngines();
 populateVoices();
+buildVoiceChecklist();
 </script>
 </body>
 </html>
