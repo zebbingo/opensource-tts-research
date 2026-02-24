@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open-Source TTS Research</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    textarea { width: 100%; min-height: 140px; }
+    select, button { padding: 8px; margin-right: 8px; }
+    .row { margin: 12px 0; }
+    .status { font-size: 14px; color: #555; }
+    .ok { color: #0a7f2e; }
+    .bad { color: #b42318; }
+  </style>
+</head>
+<body>
+  <h1>Open-Source TTS Research</h1>
+  <p>Compare popular open-source TTS engines with preloaded US/GB English voices.</p>
+
+  <div class="status">
+    Binary check:
+    <span class="{{ 'ok' if bins.piper else 'bad' }}">Piper {{ '✓' if bins.piper else '✗' }}</span> |
+    <span class="{{ 'ok' if bins.coqui else 'bad' }}">Coqui tts {{ '✓' if bins.coqui else '✗' }}</span> |
+    <span class="{{ 'ok' if bins.espeak else 'bad' }}">eSpeak NG {{ '✓' if bins.espeak else '✗' }}</span>
+  </div>
+
+  <div class="row">
+    <label>Engine</label>
+    <select id="engine"></select>
+    <label>Voice</label>
+    <select id="voice"></select>
+  </div>
+
+  <div class="row">
+    <textarea id="text">{{ default_text }}</textarea>
+  </div>
+
+  <div class="row">
+    <button id="go">Synthesize</button>
+    <span id="msg"></span>
+  </div>
+
+  <div class="row">
+    <audio id="player" controls style="width:100%;"></audio>
+  </div>
+
+<script>
+const catalog = {{ catalog | tojson }};
+const engineSel = document.getElementById('engine');
+const voiceSel = document.getElementById('voice');
+const msg = document.getElementById('msg');
+const player = document.getElementById('player');
+
+function populateEngines() {
+  Object.entries(catalog).forEach(([k, v]) => {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = v.label;
+    engineSel.appendChild(o);
+  });
+}
+
+function populateVoices() {
+  voiceSel.innerHTML = '';
+  const eng = engineSel.value;
+  const voices = catalog[eng].voices;
+  Object.entries(voices).forEach(([k, v]) => {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = v.label;
+    voiceSel.appendChild(o);
+  });
+}
+
+engineSel.addEventListener('change', populateVoices);
+document.getElementById('go').addEventListener('click', async () => {
+  msg.textContent = 'Synthesizing...';
+  const r = await fetch('/synthesize', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      engine: engineSel.value,
+      voice: voiceSel.value,
+      text: document.getElementById('text').value
+    })
+  });
+  const data = await r.json();
+  if (!data.ok) {
+    msg.textContent = 'Error: ' + data.error;
+    return;
+  }
+  player.src = data.audio_url;
+  player.play();
+  msg.textContent = 'Done.';
+});
+
+populateEngines();
+populateVoices();
+</script>
+</body>
+</html>

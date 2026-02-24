@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/*.wav
+models/coqui_warmup/*.wav
+.DS_Store
