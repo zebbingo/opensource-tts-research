@@ -15,15 +15,15 @@ A local web app to compare popular open-source TTS engines and voices.
 - One-click synthesis and audio playback/download
 - **Preload step** downloads US/GB English assets ahead of time (no lazy download during first use)
 
-## Quick start
+## Quick start (uv)
 
 ```bash
-cd /Users/bulusi/Documents/Github/opensource-tts-research
-python3 -m venv .venv
+cd /Users/bulusi/Documents/GitHub/opensource-tts-research
+uv venv
 source .venv/bin/activate
-pip install -r requirements.txt
-python preload_models.py
-python app.py
+uv sync
+uv run python preload_models.py
+uv run python app.py
 ```
 
 Open: http://127.0.0.1:7860
