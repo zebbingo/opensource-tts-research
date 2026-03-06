@@ -3,4 +3,13 @@ __pycache__/
 *.pyc
 outputs/*.wav
 models/coqui_warmup/*.wav
+
+# Piper: keep baseline models tracked, ignore additional local downloads
+models/piper/*.onnx
+models/piper/*.onnx.json
+!models/piper/en_GB-alan-medium.onnx
+!models/piper/en_GB-alan-medium.onnx.json
+!models/piper/en_US-lessac-medium.onnx
+!models/piper/en_US-lessac-medium.onnx.json
+
 .DS_Store
