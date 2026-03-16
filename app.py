@@ -3,11 +3,21 @@ import shutil
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 from voices import DEFAULT_TEXT, OUTPUTS, VOICE_CATALOG
 
 app = Flask(__name__)
+BASE = Path(__file__).parent
+VENV_BIN = BASE / ".venv" / "bin"
+
+
+def resolve_bin(name: str) -> str | None:
+    candidate = VENV_BIN / name
+    if candidate.exists() and candidate.is_file():
+        return str(candidate)
+    return shutil.which(name)
 
 
 def run(cmd, input_text=None):
@@ -22,18 +32,21 @@ def run(cmd, input_text=None):
 
 def check_bins():
     return {
-        "piper": shutil.which("piper") is not None,
-        "coqui": shutil.which("tts") is not None,
-        "espeak": shutil.which("espeak-ng") is not None,
+        "piper": resolve_bin("piper") is not None,
+        "coqui": resolve_bin("tts") is not None,
+        "espeak": resolve_bin("espeak-ng") is not None,
     }
 
 
 def synth_to_file(engine: str, voice: str, text: str, out_path):
     if engine == "piper":
         spec = VOICE_CATALOG["piper"]["voices"][voice]
+        piper_bin = resolve_bin("piper")
+        if not piper_bin:
+            raise FileNotFoundError("piper")
         run(
             [
-                "piper",
+                piper_bin,
                 "--model",
                 str(spec["model"]),
                 "--config",
@@ -46,8 +59,11 @@ def synth_to_file(engine: str, voice: str, text: str, out_path):
 
     elif engine == "coqui":
         spec = VOICE_CATALOG["coqui"]["voices"][voice]
+        tts_bin = resolve_bin("tts")
+        if not tts_bin:
+            raise FileNotFoundError("tts")
         cmd = [
-            "tts",
+            tts_bin,
             "--model_name",
             spec["model_name"],
             "--text",
@@ -61,7 +77,10 @@ def synth_to_file(engine: str, voice: str, text: str, out_path):
 
     elif engine == "espeak":
         spec = VOICE_CATALOG["espeak"]["voices"][voice]
-        run(["espeak-ng", "-v", spec["voice"], "-w", str(out_path), text])
+        espeak_bin = resolve_bin("espeak-ng")
+        if not espeak_bin:
+            raise FileNotFoundError("espeak-ng")
+        run([espeak_bin, "-v", spec["voice"], "-w", str(out_path), text])
 
 
 @app.get("/")
@@ -168,4 +187,4 @@ def audio(name):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860, debug=False)
+    app.run(host="127.0.0.1", port=7860, debug=False)
