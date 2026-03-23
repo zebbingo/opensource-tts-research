@@ -26,12 +26,12 @@ uv run python preload_models.py
 uv run python app.py
 ```
 
-Open: http://127.0.0.1:7860
+Open: http://127.0.0.1:7850
 
 ## Ngrok
 
 ```bash
-ngrok http 7860
+ngrok http 7850
 ```
 
 Use the generated `https://*.ngrok-free.app` URL.
