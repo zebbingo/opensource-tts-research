@@ -187,4 +187,4 @@ def audio(name):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=7860, debug=False)
+    app.run(host="127.0.0.1", port=7850, debug=False)
