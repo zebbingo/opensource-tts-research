@@ -2,12 +2,14 @@
 import shutil
 import subprocess
 
+from kokoro_runtime import KOKORO_DIR, KOKORO_MODEL, KOKORO_VOICES
 from voices import VOICE_CATALOG, MODELS, PIPER_VOICE_PATHS
 
 MODELS.mkdir(exist_ok=True)
 (MODELS / "piper").mkdir(parents=True, exist_ok=True)
 
 PIPER_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+KOKORO_RELEASE_BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
 
 def run(cmd, allow_fail=False):
@@ -67,6 +69,37 @@ def preload_coqui():
         run(cmd)
 
 
+def preload_kokoro():
+    try:
+        import kokoro_onnx  # noqa: F401
+    except Exception:
+        print("Skipping Kokoro preload: optional dependency not installed (`uv pip install kokoro-onnx==0.5.0 soundfile==0.13.1`).")
+        return
+
+    ensure_bin("curl")
+    KOKORO_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not KOKORO_MODEL.exists():
+        run([
+            "curl",
+            "-fL",
+            f"{KOKORO_RELEASE_BASE}/kokoro-v1.0.onnx",
+            "-o",
+            str(KOKORO_MODEL),
+        ])
+
+    if not KOKORO_VOICES.exists():
+        run([
+            "curl",
+            "-fL",
+            f"{KOKORO_RELEASE_BASE}/voices-v1.0.bin",
+            "-o",
+            str(KOKORO_VOICES),
+        ])
+
+    print("Kokoro preload done.")
+
+
 def preload_espeak():
     ensure_bin("espeak-ng")
     print("eSpeak NG uses built-in voices. EN-US/EN-GB variants are already available.")
@@ -75,5 +108,6 @@ def preload_espeak():
 if __name__ == "__main__":
     preload_piper()
     preload_coqui()
+    preload_kokoro()
     preload_espeak()
     print("\n✅ Preload complete.")
