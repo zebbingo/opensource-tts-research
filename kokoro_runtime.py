@@ -72,7 +72,8 @@ def get_kokoro():
     return _KOKORO_INSTANCE
 
 
-def synthesize_kokoro_to_file(text: str, voice: str, out_path: Path) -> None:
+def synthesize_kokoro_to_file(text: str, voice: str, out_path: Path, advanced: dict | None = None) -> None:
+    advanced = advanced or {}
     spec = build_kokoro_voices().get(voice)
     if spec is None:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
@@ -81,7 +82,7 @@ def synthesize_kokoro_to_file(text: str, voice: str, out_path: Path) -> None:
     audio, sample_rate = kokoro.create(
         text,
         voice=spec["voice"],
-        speed=spec.get("speed", 1.0),
+        speed=float(advanced.get("speed", spec.get("speed", 1.0))),
         lang=spec.get("lang", "en-us"),
     )
 

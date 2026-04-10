@@ -36,28 +36,34 @@ def check_bins():
         "piper": resolve_bin("piper") is not None,
         "coqui": resolve_bin("tts") is not None,
         "kokoro": bool(VOICE_CATALOG.get("kokoro", {}).get("voices")),
+        "parler": False,
         "espeak": resolve_bin("espeak-ng") is not None,
     }
 
 
-def synth_to_file(engine: str, voice: str, text: str, out_path):
+def synth_to_file(engine: str, voice: str, text: str, out_path, advanced=None):
+    advanced = advanced or {}
     if engine == "piper":
         spec = VOICE_CATALOG["piper"]["voices"][voice]
         piper_bin = resolve_bin("piper")
         if not piper_bin:
             raise FileNotFoundError("piper")
-        run(
-            [
-                piper_bin,
-                "--model",
-                str(spec["model"]),
-                "--config",
-                str(spec["config"]),
-                "--output_file",
-                str(out_path),
-            ],
-            input_text=text,
-        )
+        cmd = [
+            piper_bin,
+            "--model",
+            str(spec["model"]),
+            "--config",
+            str(spec["config"]),
+            "--output_file",
+            str(out_path),
+        ]
+        if advanced.get("length_scale") is not None:
+            cmd += ["--length_scale", str(advanced["length_scale"])]
+        if advanced.get("noise_scale") is not None:
+            cmd += ["--noise_scale", str(advanced["noise_scale"])]
+        if advanced.get("noise_w") is not None:
+            cmd += ["--noise_w", str(advanced["noise_w"])]
+        run(cmd, input_text=text)
 
     elif engine == "coqui":
         spec = VOICE_CATALOG["coqui"]["voices"][voice]
@@ -73,19 +79,26 @@ def synth_to_file(engine: str, voice: str, text: str, out_path):
             "--out_path",
             str(out_path),
         ]
-        if spec.get("speaker"):
-            cmd += ["--speaker_idx", spec["speaker"]]
+        speaker = advanced.get("speaker") or spec.get("speaker")
+        if speaker:
+            cmd += ["--speaker_idx", str(speaker)]
         run(cmd)
 
     elif engine == "kokoro":
-        synthesize_kokoro_to_file(text, voice, out_path)
+        synthesize_kokoro_to_file(text, voice, out_path, advanced=advanced)
 
     elif engine == "espeak":
         spec = VOICE_CATALOG["espeak"]["voices"][voice]
         espeak_bin = resolve_bin("espeak-ng")
         if not espeak_bin:
             raise FileNotFoundError("espeak-ng")
-        run([espeak_bin, "-v", spec["voice"], "-w", str(out_path), text])
+        cmd = [espeak_bin, "-v", spec["voice"], "-w", str(out_path)]
+        if advanced.get("rate") is not None:
+            cmd += ["-s", str(int(advanced["rate"]))]
+        if advanced.get("pitch") is not None:
+            cmd += ["-p", str(int(advanced["pitch"]))]
+        cmd.append(text)
+        run(cmd)
 
 
 @app.get("/")
@@ -111,6 +124,7 @@ def synthesize():
     engine = data.get("engine")
     voice = data.get("voice")
     text = (data.get("text") or "").strip()
+    advanced = data.get("advanced") or {}
 
     if not text:
         return jsonify({"ok": False, "error": "Text is empty"}), 400
@@ -123,7 +137,7 @@ def synthesize():
     out_path = OUTPUTS / out_name
 
     try:
-        synth_to_file(engine, voice, text, out_path)
+        synth_to_file(engine, voice, text, out_path, advanced=advanced)
         return jsonify({"ok": True, "audio_url": f"/audio/{out_name}"})
     except subprocess.CalledProcessError as e:
         return jsonify(
@@ -138,6 +152,7 @@ def synthesize():
 def compare_batch():
     data = request.json or {}
     text = (data.get("text") or "").strip()
+    advanced = data.get("advanced") or {}
     items = data.get("items") or []
 
     if not text:
@@ -150,6 +165,7 @@ def compare_batch():
         engine = item.get("engine")
         voice = item.get("voice")
         label = item.get("label") or f"{engine}:{voice}"
+        advanced = item.get("advanced") or {}
 
         if engine not in VOICE_CATALOG or voice not in VOICE_CATALOG[engine]["voices"]:
             results.append({"ok": False, "label": label, "error": "Unknown engine/voice"})
@@ -159,7 +175,7 @@ def compare_batch():
         out_path = OUTPUTS / out_name
 
         try:
-            synth_to_file(engine, voice, text, out_path)
+            synth_to_file(engine, voice, text, out_path, advanced=advanced)
             results.append(
                 {
                     "ok": True,
@@ -167,6 +183,7 @@ def compare_batch():
                     "voice": voice,
                     "label": label,
                     "audio_url": f"/audio/{out_name}",
+                    "advanced": advanced,
                 }
             )
         except subprocess.CalledProcessError as e:
