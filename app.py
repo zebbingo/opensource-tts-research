@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
+from kokoro_runtime import synthesize_kokoro_to_file
 from voices import DEFAULT_TEXT, OUTPUTS, VOICE_CATALOG
 
 app = Flask(__name__)
@@ -34,6 +35,7 @@ def check_bins():
     return {
         "piper": resolve_bin("piper") is not None,
         "coqui": resolve_bin("tts") is not None,
+        "kokoro": bool(VOICE_CATALOG.get("kokoro", {}).get("voices")),
         "espeak": resolve_bin("espeak-ng") is not None,
     }
 
@@ -74,6 +76,9 @@ def synth_to_file(engine: str, voice: str, text: str, out_path):
         if spec.get("speaker"):
             cmd += ["--speaker_idx", spec["speaker"]]
         run(cmd)
+
+    elif engine == "kokoro":
+        synthesize_kokoro_to_file(text, voice, out_path)
 
     elif engine == "espeak":
         spec = VOICE_CATALOG["espeak"]["voices"][voice]

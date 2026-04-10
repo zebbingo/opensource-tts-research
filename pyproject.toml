@@ -3,7 +3,7 @@ name = "opensource-tts-research"
 version = "0.1.0"
 description = "Local web app to compare popular open-source TTS engines and voices"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
   "flask==3.1.0",
   "tts==0.22.0",

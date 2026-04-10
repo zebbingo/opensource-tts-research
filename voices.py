@@ -1,6 +1,8 @@
 from pathlib import Path
 import subprocess
 
+from kokoro_runtime import build_kokoro_voices
+
 BASE = Path(__file__).parent
 MODELS = BASE / "models"
 OUTPUTS = BASE / "outputs"
@@ -123,6 +125,10 @@ VOICE_CATALOG = {
             "en_GB-vctk-p231": {"label": "English GB - VCTK p231", "model_name": "tts_models/en/vctk/vits", "speaker": "p231"},
             "en_GB-vctk-p232": {"label": "English GB - VCTK p232", "model_name": "tts_models/en/vctk/vits", "speaker": "p232"},
         },
+    },
+    "kokoro": {
+        "label": "Kokoro",
+        "voices": build_kokoro_voices(),
     },
     "espeak": {
         "label": "eSpeak NG",
